@@ -1,0 +1,145 @@
+<!DOCTYPE HTML> 
+<html lang="en"> 
+<head>
+<title>MP2C</title>
+<meta charset="utf-8"> 
+</head>
+
+    
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexNormal;
+    attribute vec3 aVertexPosition;
+    attribute vec2 aTexCoord;
+   
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    
+
+    uniform sampler2D uSampler_0;
+    uniform sampler2D uSampler_1;
+    
+    varying vec3 vVertexNormal;
+    varying vec4 vVertexPosition;
+    varying vec4 vColor;
+    varying vec3 vDiffuse;
+    //varying vec2 vTexCoord;
+
+    void main(void) {
+        float height = 0.2 * texture2D(uSampler_1, aTexCoord).x;
+        vec3 off = vec3(0.05, 0.05, 0.0);
+
+        float hL = texture2D(uSampler_1, aTexCoord - off.xz).x;
+        float hR = texture2D(uSampler_1, aTexCoord + off.xz).x;
+        float hD = texture2D(uSampler_1, aTexCoord - off.zy).x;
+        float hU = texture2D(uSampler_1, aTexCoord + off.zy).x;
+
+        // deduce terrain normal
+        vVertexNormal.x = hL - hR;
+        vVertexNormal.y = hD - hU;
+        vVertexNormal.z = 2.0;
+        vVertexNormal = normalize(vVertexNormal);
+
+        // Get the vertex position in eye coordinates
+        vVertexPosition = uMVMatrix * vec4(vec3(aVertexPosition.xy,height), 1.0);
+        
+        if (height < 0.005)
+            vDiffuse = vec3(0.0,0.7,1.0);
+        else if (height < 0.015)
+            vDiffuse = vec3(0.9,0.8,0.7);
+        else if (height < 0.035)
+            vDiffuse = vec3(0.6,0.6,0.7);
+        else if (height < 0.075)
+            vDiffuse = vec3(0.7,0.85,0.2);
+        else
+            vDiffuse = vec3(1.0,1.0,1.0);
+        vColor = texture2D(uSampler_0, aTexCoord);
+        gl_Position = uPMatrix*uMVMatrix*vec4(vec3(aVertexPosition.xy,height), 1.0);
+    }
+</script>
+  
+<script id="shader-fs" type="x-shader/x-fragment">
+precision mediump float;
+
+uniform mat3 uNMatrix;
+    
+uniform vec3 uLightPosition;
+uniform vec3 uAmbientLightColor;
+uniform vec3 uDiffuseLightColor;
+uniform vec3 uSpecularLightColor;
+
+uniform vec3 uKAmbient;
+uniform vec3 uKDiffuse;
+uniform vec3 uKSpecular;
+uniform float uShininess;
+
+uniform int uFlag;
+
+varying vec3 vVertexNormal;
+varying vec4 vVertexPosition;
+varying vec4 vColor;
+varying vec3 vDiffuse;
+//varying vec2 vTexCoord;
+
+void main(void) {
+        // Get the vertex position in eye coordinates
+        vec4 vertexPositionEye4 = vVertexPosition;
+        vec3 vertexPositionEye3 = vertexPositionEye4.xyz / vertexPositionEye4.w;
+      
+        // Calculate the vector (l) to the light source
+        
+        vec3 vectorToLightSource = normalize(uLightPosition - vertexPositionEye3);
+        
+        // Transform the normal (n) to eye coordinates
+        vec3 normalEye = normalize(uNMatrix * vVertexNormal);
+        
+        // Calculate n dot l for diffuse lighting
+        float diffuseLightWeightning = max(dot(normalEye, 
+                                        vectorToLightSource), 0.0);
+                                           
+        // Calculate the reflection vector (r) that is needed for specular light
+        vec3 reflectionVector = normalize(reflect(-vectorToLightSource, 
+                                                 normalEye));
+        
+        // The camera in eye coordinates is located in the origin and is pointing
+        // along the negative z-axis. Calculate viewVector (v) 
+        // in eye coordinates as:
+        // (0.0, 0.0, 0.0) - vertexPositionEye3
+        vec3 viewVectorEye = -normalize(vertexPositionEye3);
+        
+        float rdotv = max(dot(reflectionVector, viewVectorEye), 0.0);
+
+        vec3 h = normalize(vectorToLightSource+viewVectorEye);
+        float ndoth = max(dot(normalEye,h),0.0);
+        
+        //float specularLightWeightning = pow(rdotv, uShininess);
+
+        float specularLightWeightning = pow(ndoth, uShininess);
+        if (uFlag == 1)
+            gl_FragColor = vec4(((uAmbientLightColor*uKAmbient)
+                        + (uDiffuseLightColor*uKDiffuse) * diffuseLightWeightning
+                        + (uSpecularLightColor*uKSpecular) * specularLightWeightning),1.0);
+        else if (uFlag == 2)
+            gl_FragColor = vec4(((uAmbientLightColor*uKAmbient)
+                        + (uDiffuseLightColor*vDiffuse) * diffuseLightWeightning
+                        + (uSpecularLightColor*uKSpecular) * specularLightWeightning),1.0);
+        else
+            gl_FragColor = vColor;
+ }
+</script>
+
+<script src="gl-matrix-min.js"></script> 
+<script src="webgl-utils.js"></script> 
+<script src="Terrain.js"></script>  
+<script src="HelloTerrain.js"></script>   
+<body onload="startup();">
+ <canvas id="myGLCanvas" width="800" height="800"></canvas>
+    <form id="input_form">
+        <fieldset>
+            <legend>Rendering Parameters</legend>
+         <input type="radio" name="primitive" id="prebaked" value="prebaked" checked> Pre-baked
+         <input type="radio" name="primitive" id="shading" value="shading"> Shading
+         <input type="radio" name="primitive" id="shading2" value="shading2"> Shading with color
+        </form>
+</body>
+
+</html>
